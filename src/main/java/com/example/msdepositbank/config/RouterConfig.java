@@ -15,6 +15,8 @@ public class RouterConfig {
     @Bean
     public RouterFunction<ServerResponse> rutas(DepositHandler handler) {
         return route(GET("/deposit"), handler::findAll)
-                .andRoute(GET("/deposit/{id}"), handler::findById);
+                .andRoute(GET("/deposit/{id}"), handler::findById)
+                .andRoute(GET("/deposit/acc/{accountNumber}"), handler::findByAccountNumber)
+                .andRoute(POST("/deposit/create"), handler::createDeposit);
     }
 }
