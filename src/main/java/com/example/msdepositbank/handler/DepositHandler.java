@@ -1,78 +1,114 @@
 package com.example.msdepositbank.handler;
 
+import com.example.msdepositbank.models.dto.TransactionDTO;
 import com.example.msdepositbank.models.entities.Deposit;
-import com.example.msdepositbank.models.entities.Transaction;
-import com.example.msdepositbank.services.BillService;
+import com.example.msdepositbank.services.IDebitAccountDTOService;
 import com.example.msdepositbank.services.IDepositService;
-import com.example.msdepositbank.services.TransactionService;
+import com.example.msdepositbank.services.ITransactionDTOService;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.server.ServerRequest;
 import org.springframework.web.reactive.function.server.ServerResponse;
 import reactor.core.publisher.Mono;
 
-import java.net.URI;
-
-import static org.springframework.http.MediaType.APPLICATION_JSON;
-
 @Component
 @Slf4j(topic = "DEPOSIT_HANDLER")
 public class DepositHandler {
-    private final IDepositService depositService;
-    private final BillService billService;
-    private final TransactionService transactionService;
+    private static final Logger LOGGER = LoggerFactory.getLogger(DepositHandler.class);
+
     @Autowired
-    public DepositHandler(IDepositService depositService, BillService billService, TransactionService transactionService) {
-        this.depositService = depositService;
-        this.billService = billService;
-        this.transactionService = transactionService;
-    }
+    private IDebitAccountDTOService accountService;
+
+    @Autowired
+    private IDepositService service;
+
+    @Autowired
+    private ITransactionDTOService transactionService;
 
     public Mono<ServerResponse> findAll(ServerRequest request){
         return ServerResponse.ok().contentType(MediaType.APPLICATION_JSON)
-                .body(depositService.findAll(), Deposit.class);
+                .body(service.findAll(), Deposit.class);
     }
 
-    public Mono<ServerResponse> findById(ServerRequest request){
+    public Mono<ServerResponse> findDebit(ServerRequest request) {
         String id = request.pathVariable("id");
-        return depositService.findById(id).flatMap(deposit -> ServerResponse.ok()
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .bodyValue(deposit))
-                .switchIfEmpty(Mono.error(new RuntimeException("DEPOSIT DOES NOT EXIST")));
-    }
-
-    public Mono<ServerResponse> findByAccountNumber(ServerRequest request){
-        String accountNumber = request.pathVariable("accountNumber");
-        log.info("ACCOUNT_NUMBER_WEBCLIENT {}", accountNumber);
-        return billService.findByAccountNumber(accountNumber).flatMap(p -> ServerResponse.ok()
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .bodyValue(p))
-                .switchIfEmpty(Mono.error(new RuntimeException("THE ACCOUNT NUMBER DOES NOT EXIST")));
+        return service.findById(id).flatMap((c -> ServerResponse
+                .ok()
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(BodyInserters.fromValue(c))
+                .switchIfEmpty(ServerResponse.notFound().build()))
+        );
     }
 
     public Mono<ServerResponse> createDeposit(ServerRequest request){
-        Mono<Deposit> retire = request.bodyToMono(Deposit.class);
-        return retire.flatMap(depositRequest ->  billService.findByAccountNumber(depositRequest.getBill().getAccountNumber())
-                        .flatMap(billR -> {
-                            billR.setBalance(billR.getBalance() + depositRequest.getAmount());
-                            return billService.updateBill(billR);
-                        })
-                        .flatMap(bilTransaction -> {
-                            Transaction transaction = new Transaction();
-                            transaction.setTransactionType("DEPOSIT");
-                            transaction.setTransactionAmount(depositRequest.getAmount());
-                            transaction.setBill(bilTransaction);
-                            transaction.setDescription(depositRequest.getDescription());
-                            return transactionService.createTransaction(transaction);
-                        })
-                        .flatMap(currentTransaction -> {
-                            depositRequest.setBill(currentTransaction.getBill());
-                            return depositService.create(depositRequest);
-                        })).flatMap(retireUpdate -> ServerResponse.created(URI.create("/retire/".concat(retireUpdate.getId())))
-                        .contentType(APPLICATION_JSON)
-                        .bodyValue(retireUpdate))
-                .onErrorResume(e -> Mono.error(new RuntimeException("Error update deposit")));
+
+        Mono<Deposit> depositMono = request.bodyToMono(Deposit.class);
+
+
+        return depositMono.flatMap( depositRequest -> accountService.findByAccountNumber(depositRequest.getTypeOfAccount(),depositRequest.getAccountNumber())
+                .flatMap(account -> {
+                    if(account.getMaxLimitMovementPerMonth()>=account.getMovementPerMonth()){
+                        account.setMovementPerMonth(account.getMovementPerMonth()+1);
+                        account.setAmount(account.getAmount()+depositRequest.getAmount());
+                    }else{
+                        account.setAmount(account.getAmount()+depositRequest.getAmount()+account.getCommission());
+                    }
+                    LOGGER.info("El id del débito es: " + account.getId());
+                    return accountService.updateDebit(account.getTypeOfAccount(),account);
+                }).flatMap(debit -> {
+
+                    if(debit.getMaxLimitMovementPerMonth()>=debit.getMovementPerMonth()){
+                        TransactionDTO Commission = new TransactionDTO();
+                        Commission.setTypeOfAccount(debit.getTypeOfAccount());
+                        Commission.setTypeoftransaction("COMMISSION");
+                        Commission.setCustomerIdentityNumber(debit.getCustomerIdentityNumber());
+                        Commission.setTransactionAmount(debit.getCommission());
+                        Commission.setIdentityNumber(depositRequest.getAccountNumber());
+                        transactionService.saveTransaction(Commission);
+                    }
+
+                    TransactionDTO transaction = new TransactionDTO();
+                    transaction.setTypeOfAccount(debit.getTypeOfAccount());
+                    transaction.setTypeoftransaction("DEPOSIT");
+                    transaction.setCustomerIdentityNumber(debit.getCustomerIdentityNumber());
+                    transaction.setTransactionAmount(depositRequest.getAmount());
+                    transaction.setIdentityNumber(depositRequest.getAccountNumber());
+                    return transactionService.saveTransaction(transaction);
+                }).flatMap(deposit ->  service.create(depositRequest)))
+                .flatMap( c -> ServerResponse
+                        .ok()
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(BodyInserters.fromValue(c)));
+    }
+
+    public Mono<ServerResponse> deleteDebit(ServerRequest request){
+
+        String id = request.pathVariable("id");
+
+        Mono<Deposit> depositMono = service.findById(id);
+
+        return depositMono
+                .doOnNext(c -> LOGGER.info("delete Paymencard: PaymentCardId={}", c.getId()))
+                .flatMap(c -> service.delete(c).then(ServerResponse.noContent().build()))
+                .switchIfEmpty(ServerResponse.notFound().build());
+    }
+
+    public Mono<ServerResponse> updateDebit(ServerRequest request){
+        Mono<Deposit> depositMono = request.bodyToMono(Deposit.class);
+        String id = request.pathVariable("id");
+
+        return service.findById(id).zipWith(depositMono, (db,req) -> {
+            db.setAmount(req.getAmount());
+            return db;
+        }).flatMap( c -> ServerResponse
+                .ok()
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(service.create(c),Deposit.class))
+                .switchIfEmpty(ServerResponse.notFound().build());
     }
 }

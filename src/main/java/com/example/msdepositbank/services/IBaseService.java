@@ -13,6 +13,6 @@ public interface IBaseService<T, ID> {
 
     Mono<T> update(T o);
 
-    Mono<Void> delete(ID id);
+    Mono<Void> delete(T o);
 
 }

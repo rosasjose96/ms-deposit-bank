@@ -16,16 +16,14 @@ public class Deposit {
     @Id
     private String id;
 
-    @Field(name = "bill")
-    private Bill bill;
-
     @Field(name = "amount")
     private Double amount;
 
-    @Field(name = "description")
-    private String description = "";
+    private String typeOfAccount;
+
+    private String accountNumber;
 
     @Field(name = "retireDate")
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
-    private LocalDateTime retireDate = LocalDateTime.now();
+    private LocalDateTime depositDate = LocalDateTime.now();
 }
