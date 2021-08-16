@@ -23,7 +23,7 @@ public class Deposit {
 
     private String accountNumber;
 
-    @Field(name = "retireDate")
+    @Field(name = "depositDate")
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime depositDate = LocalDateTime.now();
 }

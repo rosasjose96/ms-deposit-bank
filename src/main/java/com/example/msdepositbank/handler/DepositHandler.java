@@ -1,5 +1,6 @@
 package com.example.msdepositbank.handler;
 
+import com.example.msdepositbank.models.dto.DebitAccountDTO;
 import com.example.msdepositbank.models.dto.TransactionDTO;
 import com.example.msdepositbank.models.entities.Deposit;
 import com.example.msdepositbank.services.IDebitAccountDTOService;
@@ -55,35 +56,43 @@ public class DepositHandler {
                     if(account.getMaxLimitMovementPerMonth()>=account.getMovementPerMonth()){
                         account.setMovementPerMonth(account.getMovementPerMonth()+1);
                         account.setAmount(account.getAmount()+depositRequest.getAmount());
-                    }else{
-                        account.setAmount(account.getAmount()+depositRequest.getAmount()+account.getCommission());
+                    }else if (account.getMaxLimitMovementPerMonth()<account.getMovementPerMonth()){
+                        LOGGER.info("La commission es: " + account.getCommission());
+                        account.setAmount(account.getAmount()+depositRequest.getAmount()-account.getCommission());
                     }
                     LOGGER.info("El id del débito es: " + account.getId());
                     return accountService.updateDebit(account.getTypeOfAccount(),account);
-                }).flatMap(debit -> {
-
-                    if(debit.getMaxLimitMovementPerMonth()>=debit.getMovementPerMonth()){
+                })
+                .flatMap(ope -> {
+                    TransactionDTO transaction = new TransactionDTO();
+                    transaction.setTypeOfAccount(ope.getTypeOfAccount());
+                    transaction.setTypeoftransaction("DEPOSIT");
+                    transaction.setCustomerIdentityNumber(ope.getCustomerIdentityNumber());
+                    transaction.setTransactionAmount(depositRequest.getAmount());
+                    transaction.setIdentityNumber(depositRequest.getAccountNumber());
+                    return transactionService.saveTransaction(transaction);
+                })
+                .flatMap(trans ->  accountService.findByAccountNumber(trans.getTypeOfAccount(),trans.getIdentityNumber()))
+                .flatMap(debit -> {
+                    if(debit.getMaxLimitMovementPerMonth()<debit.getMovementPerMonth()){
                         TransactionDTO Commission = new TransactionDTO();
                         Commission.setTypeOfAccount(debit.getTypeOfAccount());
                         Commission.setTypeoftransaction("COMMISSION");
                         Commission.setCustomerIdentityNumber(debit.getCustomerIdentityNumber());
                         Commission.setTransactionAmount(debit.getCommission());
                         Commission.setIdentityNumber(depositRequest.getAccountNumber());
-                        transactionService.saveTransaction(Commission);
+                        return transactionService.saveTransaction(Commission);
+                    } else {
+                        return Mono.just(DebitAccountDTO.builder().build());
                     }
 
-                    TransactionDTO transaction = new TransactionDTO();
-                    transaction.setTypeOfAccount(debit.getTypeOfAccount());
-                    transaction.setTypeoftransaction("DEPOSIT");
-                    transaction.setCustomerIdentityNumber(debit.getCustomerIdentityNumber());
-                    transaction.setTransactionAmount(depositRequest.getAmount());
-                    transaction.setIdentityNumber(depositRequest.getAccountNumber());
-                    return transactionService.saveTransaction(transaction);
-                }).flatMap(deposit ->  service.create(depositRequest)))
+                })
+                .flatMap(deposit ->  service.create(depositRequest)))
                 .flatMap( c -> ServerResponse
                         .ok()
                         .contentType(MediaType.APPLICATION_JSON)
-                        .body(BodyInserters.fromValue(c)));
+                        .body(BodyInserters.fromValue(c)))
+                .switchIfEmpty(ServerResponse.notFound().build());
     }
 
     public Mono<ServerResponse> deleteDebit(ServerRequest request){
