@@ -9,6 +9,9 @@ import org.springframework.data.mongodb.core.mapping.Field;
 
 import java.time.LocalDateTime;
 
+/**
+ * The type Deposit.
+ */
 @Document(collection = "deposit")
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @Data

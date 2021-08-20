@@ -17,6 +17,9 @@ import org.springframework.web.reactive.function.server.ServerRequest;
 import org.springframework.web.reactive.function.server.ServerResponse;
 import reactor.core.publisher.Mono;
 
+/**
+ * The type Deposit handler.
+ */
 @Component
 @Slf4j(topic = "DEPOSIT_HANDLER")
 public class DepositHandler {
@@ -31,11 +34,23 @@ public class DepositHandler {
     @Autowired
     private ITransactionDTOService transactionService;
 
+    /**
+     * Find all mono.
+     *
+     * @param request the request
+     * @return the mono
+     */
     public Mono<ServerResponse> findAll(ServerRequest request){
         return ServerResponse.ok().contentType(MediaType.APPLICATION_JSON)
                 .body(service.findAll(), Deposit.class);
     }
 
+    /**
+     * Find debit mono.
+     *
+     * @param request the request
+     * @return the mono
+     */
     public Mono<ServerResponse> findDebit(ServerRequest request) {
         String id = request.pathVariable("id");
         return service.findById(id).flatMap((c -> ServerResponse
@@ -46,6 +61,12 @@ public class DepositHandler {
         );
     }
 
+    /**
+     * Create deposit mono.
+     *
+     * @param request the request
+     * @return the mono
+     */
     public Mono<ServerResponse> createDeposit(ServerRequest request){
 
         Mono<Deposit> depositMono = request.bodyToMono(Deposit.class);
@@ -95,6 +116,12 @@ public class DepositHandler {
                 .switchIfEmpty(ServerResponse.notFound().build());
     }
 
+    /**
+     * Delete debit mono.
+     *
+     * @param request the request
+     * @return the mono
+     */
     public Mono<ServerResponse> deleteDebit(ServerRequest request){
 
         String id = request.pathVariable("id");
@@ -107,6 +134,12 @@ public class DepositHandler {
                 .switchIfEmpty(ServerResponse.notFound().build());
     }
 
+    /**
+     * Update debit mono.
+     *
+     * @param request the request
+     * @return the mono
+     */
     public Mono<ServerResponse> updateDebit(ServerRequest request){
         Mono<Deposit> depositMono = request.bodyToMono(Deposit.class);
         String id = request.pathVariable("id");
